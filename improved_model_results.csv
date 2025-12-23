@@ -1,0 +1,3 @@
+Model,Features,AUC,ALIFT
+Baseline (New Features),Standard + Interactions,0.7859868116773618,2.196741724601216
+Enhanced (Classified),Standard + Interactions + Prob(S/L),0.7958827976395922,2.21020378315588
