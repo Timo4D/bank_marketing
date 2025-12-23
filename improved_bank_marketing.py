@@ -12,6 +12,10 @@ import sys
 RANDOM_STATE = 42
 warnings.filterwarnings('ignore')
 
+# Derived Constants from Data Analysis
+AVG_DURATION_SHORT = 101.3  # seconds
+AVG_DURATION_LONG = 417.0   # seconds
+
 def load_data(filepath):
     """Loads the dataset from the specified CSV file."""
     print("Loading data...")
@@ -177,7 +181,109 @@ def train_outcome_model(X, y, description):
     print(f"  AUC: {mean_auc:.4f}")
     print(f"  ALIFT: {mean_alift:.4f}")
     
-    return mean_auc, mean_alift
+    return mean_auc, mean_alift, pipeline
+
+def generate_call_schedule(X_feature_data, df_original, prob_short, prob_long, prob_success):
+    """
+    Generates a prioritized call schedule based on Efficiency Score.
+    
+    Efficiency Score = P(Success) / Expected Duration
+    Expected Duration = P(Short)*Avg_Short + P(Long)*Avg_Long
+    """
+    print("\n--- Generating Prioritized Call Schedule ---")
+    
+    schedule = df_original.copy()
+    
+    # Add Predictions
+    schedule['prob_short'] = prob_short
+    schedule['prob_long'] = prob_long
+    schedule['prob_success'] = prob_success
+    
+    # Calculate Expected Duration
+    # Use the constants we found earlier
+    schedule['expected_duration'] = (
+        schedule['prob_short'] * AVG_DURATION_SHORT + 
+        schedule['prob_long'] * AVG_DURATION_LONG
+    )
+    
+    # Calculate Efficiency Score (Success Probability per Second)
+    # Avoid division by zero (though avg duration > 0)
+    schedule['efficiency_score'] = schedule['prob_success'] / schedule['expected_duration']
+    
+    # Sort by Efficiency Score Descending
+    schedule_sorted = schedule.sort_values('efficiency_score', ascending=False)
+    
+    print("\nTop 5 Most Efficient Calls (Prioritized):")
+    cols_to_show = ['prob_success', 'expected_duration', 'efficiency_score', 'y']
+    if 'duration' in schedule.columns:
+        cols_to_show.append('duration') # Show actual duration if available for comparison
+        
+    print(schedule_sorted[cols_to_show].head(5))
+    
+    return schedule_sorted
+
+def simulate_business_impact(schedule_df):
+    """
+    Simulates an 8-hour shift (28,800 seconds) to quantify business impact.
+    Compares 'Baseline' (Random) vs 'Prioritized' (Efficiency Score).
+    """
+    print("\n--- Business Impact Simulation (8-Hour Shift) ---")
+    
+    TIME_LIMIT = 8 * 3600 # 28,800 seconds
+    
+    # Needs 'y' and 'duration' (actuals) to be valid
+    if 'y' not in schedule_df.columns or 'duration' not in schedule_df.columns:
+        print("Warning: Cannot run simulation without actual 'y' and 'duration' columns.")
+        return
+
+    def run_shift(df_subset):
+        total_duration = 0
+        calls_made = 0
+        sales = 0
+        
+        # We iterate through the dataframe until time runs out
+        for _, row in df_subset.iterrows():
+            duration = row['duration']
+            outcome = row['y'] # 0 or 1
+            
+            if total_duration + duration > TIME_LIMIT:
+                break
+                
+            total_duration += duration
+            calls_made += 1
+            sales += outcome
+            
+        return calls_made, sales
+
+    # 1. Baseline Strategy (Random) - Run 100 times for stability
+    baseline_calls = []
+    baseline_sales = []
+    print("Simulating Baseline (Random Calling)...")
+    for _ in range(100):
+        # Shuffle
+        df_random = schedule_df.sample(frac=1, random_state=None) 
+        c, s = run_shift(df_random)
+        baseline_calls.append(c)
+        baseline_sales.append(s)
+        
+    avg_base_calls = np.mean(baseline_calls)
+    avg_base_sales = np.mean(baseline_sales)
+    
+    # 2. Prioritized Strategy
+    print("Simulating Prioritized Strategy...")
+    # Already sorted by generate_call_schedule, but sort again to be sure
+    df_prioritized = schedule_df.sort_values('efficiency_score', ascending=False)
+    p_calls, p_sales = run_shift(df_prioritized)
+    
+    # Results
+    print("\nResults per 8-Hour Shift (Avg Agent):")
+    print(f"{'Metric':<20} | {'Baseline':<10} | {'Prioritized':<12} | {'Lift':<10}")
+    print("-" * 60)
+    print(f"{'Calls Made':<20} | {avg_base_calls:<10.1f} | {p_calls:<12} | {((p_calls/avg_base_calls)-1)*100:+.1f}%")
+    print(f"{'Sales (Conversions)':<20} | {avg_base_sales:<10.1f} | {p_sales:<12} | {((p_sales/avg_base_sales)-1)*100:+.1f}%")
+
+    sales_lift = p_sales - avg_base_sales
+    print(f"\nImpact: An agent using this model makes ~{sales_lift:.1f} MORE sales per day.")
 
 def main():
     # 1. Load Data
@@ -198,7 +304,7 @@ def main():
         X_enhanced['prob_long'] = predicted_probs[:, 1]
         
         # C. Train Final Outcome Model
-        auc_enhanced, alift_enhanced = train_outcome_model(X_enhanced, y, "Enhanced Model (with Duration Probabilities)")
+        auc_enhanced, alift_enhanced, outcome_model = train_outcome_model(X_enhanced, y, "Enhanced Model (with Duration Probabilities)")
         
         results.append({
             'Model': 'Enhanced LightGBM',
@@ -206,6 +312,34 @@ def main():
             'AUC': auc_enhanced,
             'ALIFT': alift_enhanced
         })
+        
+        # D. Generate Schedule
+        # We need probabilities for the whole dataset to generate the schedule.
+        # Ideally, we should use cross-val predictions or hold-out, but for the "Application" phase, 
+        # we can use the model trained on the full dataset to score new/unknown data.
+        # Here, we are scoring the historical data to demonstrate the concept.
+        
+        # Fit final outcome model on all data
+        outcome_model.fit(X_enhanced, y)
+        final_probs_success = outcome_model.predict_proba(X_enhanced)[:, 1]
+        
+        # Generate Schedule
+        # Note: predicted_probs comes from train_duration_classifier which returned CV probs.
+        # For a production pipeline, we would train on all data and predict on new data.
+        # But 'predicted_probs' variable currently holds CV probs for the training set X_encoded.
+        prioritized_schedule = generate_call_schedule(
+            X_encoded, 
+            df, 
+            predicted_probs[:, 0], # Prob Short
+            predicted_probs[:, 1], # Prob Long
+            final_probs_success    # Prob Success
+        )
+        
+        prioritized_schedule.to_csv('prioritized_call_schedule.csv', index=False, sep=';')
+        print("Prioritized schedule saved to 'prioritized_call_schedule.csv'")
+        
+        # E. Simulate Business Impact
+        simulate_business_impact(prioritized_schedule)
         
         print("\n--- Final Results ---")
         print(pd.DataFrame(results))
