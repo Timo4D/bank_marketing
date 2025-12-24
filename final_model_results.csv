@@ -1,2 +1,2 @@
 Model,Features,AUC,ALIFT
-Enhanced LightGBM,Base + Duration Probs,0.796423439723583,2.211363462175611
+Enhanced LightGBM,Base + Duration Probs,0.7824440837393744,2.1705641113116174
