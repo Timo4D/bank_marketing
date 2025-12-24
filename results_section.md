@@ -1,59 +1,41 @@
 # Results and Conclusion
 
 ## 1. Experimental Setup & Metrics
-Our experiments evaluated the impact of incorporating call duration predictions into the lead prioritization strategy. We evaluated three configurations:
-1.  **Baseline**: Random calling (simulating a standard list-based approach).
-2.  **Enhanced (Proposed)**: Prioritization based on Efficiency Score ($P(Success) \div E[Time]$), using predicted duration probabilities.
-3.  **Oracle (Upper Bound)**: Prioritization using *perfect* (ground-truth) duration knowledge to assess the theoretical limit.
+Our experiments evaluated the impact of incorporating call duration predictions into the lead prioritization strategy. We evaluated four configurations:
+1.  **Baseline (Random)**: Random calling (simulating a standard list-based approach).
+2.  **Standard ML (Probability)**: Prioritizing leads by highest $P(Success)$ (Standard Industry Practice).
+3.  **Efficiency (Proposed)**: Prioritization based on Efficiency Score ($P(Success) \div E[Time]$).
+4.  **Oracle (Upper Bound)**: Prioritization using *perfect* (ground-truth) duration knowledge.
 
-Key metrics included:
-*   **Duration Accuracy**: Accuracy of classifying calls as Short vs. Long.
-*   **AUC (Area Under ROC Curve)**: Discrimination ability of the Outcome Model.
-*   **Sales per 8h Shift**: Simulated number of successful conversions a single agent can achieve in 8 hours (28,800s).
+## 2. Model Performance
+### Duration Classification
+Attempts to classify pre-call duration yielded modest signal.
+*   **Accuracy**: **57.56%** (vs 50% random).
+*   **Log Loss**: 0.6727.
 
-## 2. Duration Classification Model Results
-Attempts to classify pre-call duration yielded modest but actionable signal.
+### Outcome Prediction
+Integrating duration probabilities yielded a slight improvement in AUC over the Standard model.
+*   **Standard (Prob Only) AUC**: 0.7746
+*   **Enhanced (Duration Props) AUC**: 0.7755
+*   **Oracle (Perfect Info) AUC**: 0.8646
 
-| Metric | Result |
-| :--- | :--- |
-| **Accuracy** | **57.56%** |
-| **Log Loss** | 0.6727 |
+## 3. Business Impact Simulation (The 8-Hour Shift)
+We simulated an 8-hour agent shift (28,800 seconds) to verify the real-world impact.
 
-The model performed better than random guessing (50%), confirming that customer attributes (age, campaign history) contain latent signals about call length.
-
-**Best Hyperparameters (LightGBM)**:
-*   `n_estimators`: 120
-*   `learning_rate`: 0.080
-*   `max_depth`: 10
-*   `num_leaves`: 74
-*   `min_child_samples`: 66
-
-## 3. Outcome Prediction Model Results
-Integrating duration probabilities into the outcome model (Efficiency Score strategy) yielded the following performance:
-
-| Metric | Enhanced Model | Oracle (Perfect) |
-| :--- | :--- | :--- |
-| **AUC** | 0.7755 | 0.8646 |
-| **ALIFT** | 2.17 | 2.41 |
-
-**Outcome Model Hyperparameters (LightGBM):**
-*   `n_estimators`: 303
-*   `learning_rate`: 0.045
-*   `max_depth`: 3
-*   `subsample`: 0.724
-
-## 4. Business Impact Simulation (Conclusion)
-The true value of the model is realized in the scheduling simulation, which accounts for the time cost of each call.
-
-| Strategy | Calls Made | Sales (Conversions) | Lift vs Random | Output |
+| Strategy | Metric Implied | Sales (Conversions) | Lift vs Random | Lift vs Standard |
 | :--- | :--- | :--- | :--- | :--- |
-| **Baseline (Random)** | 110.6 | 12.6 | - | 1x |
-| **Enhanced (Proposed)** | 99.0 | **54.0** | **+328%** | **4.3x** |
-| **Oracle (Theoretical)** | 235.0 | 117.0 | +853% | 9.3x |
+| **Random** | - | 12.4 | - | - |
+| **Standard ML** | Highest Prob | **66.0** | +432% | - |
+| **Efficiency (Proposed)** | Best ROI | 54.0 | +335% | -18% |
+| **Oracle (Theoretical)** | Best ROI | **117.0** | +843% | **+77%** |
 
 ### Key Findings
-1.  **Efficiency over Volume**: The Proposed Model made *fewer* calls (99 vs 110) but achieved **4.3x more sales**. By skipping long, low-probability calls, agents spent their limited time on high-efficiency prospects.
-2.  **Massive Potential Gap**: The "Oracle" experiment demonstrates that while our 57% accurate duration predictor yields a 300% gain, a perfect predictor would yield a **900% gain**. This suggests that **investing in better duration features** (e.g., historical call logs, metadata) is the single highest-ROI activity for future development.
+1.  **Current Performance Gap**: The *Proposed Efficiency Strategy* currently underperforms the *Standard Probability Strategy* (54 vs 66 Sales).
+    *   **Reason**: The Duration Classifier (57% accuracy) is not yet precise enough. It likely misclassifies some high-probability long calls as "inefficient", causing them to be skipped.
+2.  **Theoretical Dominance (Novelty)**: The *Oracle* experiment proves that if duration could be predicted perfectly, the Efficiency Strategy would yield **117 Sales**, nearly **double** the Standard Strategy (66 Sales).
+    *   This confirms that the **concept** of "Return on Time" is superior to "Return on Call," but its realization depends entirely on the quality of the duration predictor.
 
-## 5. Summary Conclusion
-We successfully demonstrated that incorporating call duration into lead scoring significantly outperforms traditional probability-only scoring. The proposed **Efficiency Score** framework aligns model incentives with business constraints (time), resulting in an estimated **+328% increase in daily sales per agent**.
+## 4. Conclusion
+We proposed a novel "Efficiency Score" that prioritizes leads by *revenue per second* rather than *revenue per call*.
+*   **Novelty**: Integrating pre-call duration prediction to operationalize the "forbidden variable" of sales time.
+*   **Status**: While the current duration model (Activity-based features) is too weak to beat standard probability scoring, the approach has a massive theoretical ceiling (+77% over standard state-of-the-art). Future work should focus on richer data (e.g., audio analytics, historical user profile) to bridge this gap.

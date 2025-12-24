@@ -354,68 +354,51 @@ def generate_call_schedule(X_feature_data, df_original, prob_short, prob_long, p
     
     return schedule_sorted
 
-def simulate_business_impact(schedule_df):
+def simulate_business_impact(schedule_df, print_output=True):
     """
-    Simulates an 8-hour shift (28,800 seconds) to quantify business impact.
-    Compares 'Baseline' (Random) vs 'Prioritized' (Efficiency Score).
+    Simulates an 8-hour shift (28,800 seconds).
+    If print_output is True, prints 'Calls: X, Sales: Y'.
     """
-    print("\n--- Business Impact Simulation (8-Hour Shift) ---")
+    TIME_LIMIT = 8 * 3600
     
-    TIME_LIMIT = 8 * 3600 # 28,800 seconds
-    
-    # Needs 'y' and 'duration' (actuals) to be valid
-    if 'y' not in schedule_df.columns or 'duration' not in schedule_df.columns:
-        print("Warning: Cannot run simulation without actual 'y' and 'duration' columns.")
-        return
-
-    def run_shift(df_subset):
-        total_duration = 0
-        calls_made = 0
-        sales = 0
+    total_duration = 0
+    calls_made = 0
+    sales = 0
         
-        # We iterate through the dataframe until time runs out
-        for _, row in df_subset.iterrows():
-            duration = row['duration']
-            outcome = row['y'] # 0 or 1
-            
-            if total_duration + duration > TIME_LIMIT:
-                break
-                
-            total_duration += duration
-            calls_made += 1
-            sales += outcome
-            
-        return calls_made, sales
-
-    # 1. Baseline Strategy (Random) - Run 100 times for stability
-    baseline_calls = []
-    baseline_sales = []
-    print("Simulating Baseline (Random Calling)...")
-    for _ in range(100):
-        # Shuffle
-        df_random = schedule_df.sample(frac=1, random_state=None) 
-        c, s = run_shift(df_random)
-        baseline_calls.append(c)
-        baseline_sales.append(s)
+    for _, row in schedule_df.iterrows():
+        # Default to 0 duration/outcome if not present (shouldn't happen with correct usage)
+        duration = row.get('duration', 0)
+        outcome = row.get('y', 0)
         
-    avg_base_calls = np.mean(baseline_calls)
-    avg_base_sales = np.mean(baseline_sales)
-    
-    # 2. Prioritized Strategy
-    print("Simulating Prioritized Strategy...")
-    # Already sorted by generate_call_schedule, but sort again to be sure
-    df_prioritized = schedule_df.sort_values('efficiency_score', ascending=False)
-    p_calls, p_sales = run_shift(df_prioritized)
-    
-    # Results
-    print("\nResults per 8-Hour Shift (Avg Agent):")
-    print(f"{'Metric':<20} | {'Baseline':<10} | {'Prioritized':<12} | {'Lift':<10}")
-    print("-" * 60)
-    print(f"{'Calls Made':<20} | {avg_base_calls:<10.1f} | {p_calls:<12} | {((p_calls/avg_base_calls)-1)*100:+.1f}%")
-    print(f"{'Sales (Conversions)':<20} | {avg_base_sales:<10.1f} | {p_sales:<12} | {((p_sales/avg_base_sales)-1)*100:+.1f}%")
+        if total_duration + duration > TIME_LIMIT:
+            break
+            
+        total_duration += duration
+        calls_made += 1
+        sales += outcome
+            
+    if print_output:
+        print(f"  Calls: {calls_made}, Sales: {sales}")
+        
+    return calls_made, sales
 
-    sales_lift = p_sales - avg_base_sales
-    print(f"\nImpact: An agent using this model makes ~{sales_lift:.1f} MORE sales per day.")
+
+def simulate_business_impact_random(schedule_df):
+    """
+    Simulates an 8-hour shift (28,800 seconds) for a random calling strategy.
+    Runs 50 times for stability and returns average calls and sales.
+    """
+    n_trials = 50
+    calls_list = []
+    sales_list = []
+    
+    for i in range(n_trials):
+        df_shuffled = schedule_df.sample(frac=1, random_state=RANDOM_STATE + i)
+        c, s = simulate_business_impact(df_shuffled, print_output=False)
+        calls_list.append(c)
+        sales_list.append(s)
+        
+    return np.mean(calls_list), np.mean(sales_list)
 
 def run_oracle_experiment(X_base, y, df_original, duration_target):
     """
@@ -501,37 +484,110 @@ def main():
         # Note: predicted_probs comes from train_duration_classifier which returned CV probs.
         # For a production pipeline, we would train on all data and predict on new data.
         # But 'predicted_probs' variable currently holds CV probs for the training set X_encoded.
-        prioritized_schedule = generate_call_schedule(
-            X_encoded, 
-            df, 
-            predicted_probs[:, 0], # Prob Short
-            predicted_probs[:, 1], # Prob Long
-            final_probs_success    # Prob Success
+        
+        # ---------------------------------------------------------
+        # 4. Baseline Model (Probability Only - No Duration Features)
+        # ---------------------------------------------------------
+        # Train model on X_encoded (Raw features without duration probs)
+        auc_base, alift_base, baseline_model = train_outcome_model(
+            X_encoded, y, "Baseline Model (Probability Only - No Duration Info)"
         )
         
-        prioritized_schedule.to_csv('prioritized_call_schedule.csv', index=False, sep=';')
-        print("Prioritized schedule saved to 'prioritized_call_schedule.csv'")
+        # Generate Baseline Probabilities (CV)
+        print("Generating baseline probabilities via 5-fold CV (Shuffle=True)...")
+        cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=RANDOM_STATE)
+        prob_success_baseline = cross_val_predict(baseline_model, X_encoded, y, cv=cv, method='predict_proba', n_jobs=1)[:, 1]
+
+        # ---------------------------------------------------------
+        # 5. Generate Schedules
+        # ---------------------------------------------------------
         
-        # E. Simulate Business Impact
-        simulate_business_impact(prioritized_schedule)
+        # Schedule 1: Efficiency Score (Enhanced)
+        schedule_efficiency = generate_call_schedule(X_encoded, df, predicted_probs[:, 0], predicted_probs[:, 1], final_probs_success)
+        schedule_efficiency['strategy'] = 'Efficiency (Proposed)'
         
-        # F. Run Oracle Experiment
+        # Schedule 2: Probability Score (Standard/Baseline)
+        # Rank purely by Probability Descending
+        schedule_standard = df.copy()
+        schedule_standard['prob_success'] = prob_success_baseline
+        schedule_standard['efficiency_score'] = schedule_standard['prob_success'] # Proxy for efficiency is just prob
+        schedule_standard['strategy'] = 'Probability (Standard ML)'
+        schedule_standard = schedule_standard.sort_values('prob_success', ascending=False)
+        
+        # Schedule 3: Oracle
+        # (Generated inside run_oracle_experiment, but let's just grab metrics from function for now)
+        
+        # ---------------------------------------------------------
+        # 6. Business Impact Simulation
+        # ---------------------------------------------------------
+        
+        print("\n--- Business Impact Simulation (8-Hour Shift) ---")
+        
+        # 1. Random Baseline
+        print("Simulating Random Strategy...")
+        # Just shuffle the dataframe 100 times and average? 
+        # Or just use the 'simulate_business_impact' function on shuffled df
+        calls_random, sales_random = simulate_business_impact_random(df)
+        
+        # 2. Standard ML (Probability Only)
+        print("Simulating Standard Probability Strategy...")
+        calls_standard, sales_standard = simulate_business_impact(schedule_standard)
+        
+        # 3. Efficiency (Proposed)
+        print("Simulating Efficiency Strategy...")
+        calls_eff, sales_eff = simulate_business_impact(schedule_efficiency)
+
+        # 4. Oracle (For comparison)
+        # We need to run simulation on Oracle schedule. 
+        # run_oracle_experiment returns AUC/ALIFT, let's modify it or just run sim inside main
+        # To keep it clean, let's just use the metrics from the function call earlier
+        # Actually, we need to CALL run_oracle_experiment to get the results?
+        # Wait, in the previous code 'run_oracle_experiment' printed the simulation results.
+        # Let's verify the Oracle run.
+        print("\n--- Oracle Experiment ---")
         auc_oracle, alift_oracle = run_oracle_experiment(X_encoded, y, df, duration_target)
         
-        print("\n--- Final Results Comparison ---")
-        comparison = [
-            {'Model': 'Enhanced (Real)', 'AUC': results[-1]['AUC'], 'ALIFT': results[-1]['ALIFT']},
-            {'Model': 'Oracle (Perfect)', 'AUC': auc_oracle, 'ALIFT': alift_oracle}
-        ]
-        print(pd.DataFrame(comparison))
+        # We can't easily get the 'calls_oracle' out of that function without changing it.
+        # Let's trust the print output for Oracle or refactor if needed.
+        # For the table, let's just print the main 3 for now.
+
+        print(f"\nResults per 8-Hour Shift (Avg Agent):")
+        print(f"{'Metric':<20} | {'Random':<10} | {'Standard':<10} | {'Efficiency':<10} | {'Lift (Eff vs Std)':<15}")
+        print("-" * 80)
+        print(f"{'Calls Made':<20} | {calls_random:<10.1f} | {calls_standard:<10.0f} | {calls_eff:<10.0f} | {((calls_eff-calls_standard)/calls_standard)*100:+.1f}%")
+        print(f"{'Sales':<20} | {sales_random:<10.1f} | {sales_standard:<10.0f} | {sales_eff:<10.0f} | {((sales_eff-sales_standard)/sales_standard)*100:+.1f}%")
+
+        print(f"\nImpact: Prioritizing by Efficiency yields {sales_eff - sales_standard:.1f} MORE sales than prioritized by Probability alone.")
         
-        pd.DataFrame(results + comparison).to_csv('final_model_results_with_oracle.csv', index=False)
-        print(pd.DataFrame(results))
-        pd.DataFrame(results).to_csv('final_model_results.csv', index=False)
-        print("Results saved to 'final_model_results.csv'")
+        # Save Results
+        results = pd.DataFrame({
+            'Model': ['Enhanced (Real)', 'Baseline (Prob Only)', 'Oracle (Perfect)'],
+            'AUC': [auc_enhanced, auc_base, auc_oracle],
+            'ALIFT': [alift_enhanced, alift_base, alift_oracle]
+        })
+        
+        print("\n--- Final Results Comparison ---")
+        print(results)
+        results.to_csv('final_model_results.csv', index=False)
 
     else:
         print("Error: Duration target could not be created.")
 
+def simulate_business_impact_random(df):
+    # Helper to run random simulation multiple times
+    n_trials = 50
+    calls_list = []
+    sales_list = []
+    
+    for i in range(n_trials):
+        df_shuffled = df.sample(frac=1, random_state=RANDOM_STATE + i)
+        c, s = simulate_business_impact(df_shuffled, print_output=False)
+        calls_list.append(c)
+        sales_list.append(s)
+        
+    return np.mean(calls_list), np.mean(sales_list)
+
+
 if __name__ == "__main__":
     main()
+
