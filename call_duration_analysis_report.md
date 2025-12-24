@@ -79,6 +79,21 @@ The simulation models a single agent's workday constraint—**Time**.
 >
 > Surprisingly, they make *fewer* calls (-13%) but spend their time talking to highly likely buyers, drastically increasing the "Revenue per Hour".
 
+## Oracle Duration Analysis (The "What If" Scenario)
+
+To test if improving duration prediction is worth further investment, I ran an **Oracle Experiment** assuming a Perfect Duration Predictor (100% accuracy).
+
+### The Gap Analysis
+
+| Metric | Current Model | Oracle (Perfect) | Gap (Potential) |
+| :--- | :--- | :--- | :--- |
+| **Model AUC** | 0.7964 | 0.8733 | +0.077 |
+| **Sales per Shift** | 51.0 | 141.0 | **+176% over current** |
+
+> [!TIP]
+> **Investment Recommendation**:
+> While the current model provides a massive **3x lift** over random calling, a perfect duration predictor would yield a **10x lift** (141 sales vs 12.8). This huge gap proves that finding new features to predict call duration (e.g., customer personality, historical talk time) has extremely high ROI.
+
 ## Conclusion
 
 Predicting call duration classification (Short/Long) provides valuable signal:

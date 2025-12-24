@@ -285,6 +285,48 @@ def simulate_business_impact(schedule_df):
     sales_lift = p_sales - avg_base_sales
     print(f"\nImpact: An agent using this model makes ~{sales_lift:.1f} MORE sales per day.")
 
+def run_oracle_experiment(X_base, y, df_original, duration_target):
+    """
+    Runs the 'Oracle' experiment where we assume we have a PERFECT duration predictor.
+    This establishes the theoretical upper bound for the project.
+    """
+    print("\n\n" + "="*60)
+    print("RUNNING ORACLE EXPERIMENT (Perfect Duration Predictor)")
+    print("="*60)
+    
+    # 1. Create 'Perfect' Probabilities from Actuals
+    # If duration_class is 0 (Short): prob_short=1.0, prob_long=0.0
+    # If duration_class is 1 (Long): prob_short=0.0, prob_long=1.0
+    
+    perfect_probs_short = np.where(duration_target == 0, 1.0, 0.0)
+    perfect_probs_long = np.where(duration_target == 1, 1.0, 0.0)
+    
+    # 2. Enhance Features with Perfect Info
+    X_oracle = X_base.copy()
+    X_oracle['prob_short'] = perfect_probs_short
+    X_oracle['prob_long'] = perfect_probs_long
+    
+    # 3. Train Outcome Model with Perfect Features
+    auc_oracle, alift_oracle, oracle_model = train_outcome_model(X_oracle, y, "Oracle Model (Perfect Duration Info)")
+    
+    # 4. Generate Oracle Schedule
+    # Fit on all data for scoring (simulation purpose)
+    oracle_model.fit(X_oracle, y)
+    oracle_probs_success = oracle_model.predict_proba(X_oracle)[:, 1]
+    
+    oracle_schedule = generate_call_schedule(
+        X_oracle,
+        df_original,
+        perfect_probs_short,
+        perfect_probs_long,
+        oracle_probs_success
+    )
+    
+    # 5. Simulate Oracle Business Impact
+    simulate_business_impact(oracle_schedule)
+    
+    return auc_oracle, alift_oracle
+
 def main():
     # 1. Load Data
     df = load_data('data/bank-additional/bank-additional-full.csv')
@@ -341,7 +383,17 @@ def main():
         # E. Simulate Business Impact
         simulate_business_impact(prioritized_schedule)
         
-        print("\n--- Final Results ---")
+        # F. Run Oracle Experiment
+        auc_oracle, alift_oracle = run_oracle_experiment(X_encoded, y, df, duration_target)
+        
+        print("\n--- Final Results Comparison ---")
+        comparison = [
+            {'Model': 'Enhanced (Real)', 'AUC': results[-1]['AUC'], 'ALIFT': results[-1]['ALIFT']},
+            {'Model': 'Oracle (Perfect)', 'AUC': auc_oracle, 'ALIFT': alift_oracle}
+        ]
+        print(pd.DataFrame(comparison))
+        
+        pd.DataFrame(results + comparison).to_csv('final_model_results_with_oracle.csv', index=False)
         print(pd.DataFrame(results))
         pd.DataFrame(results).to_csv('final_model_results.csv', index=False)
         print("Results saved to 'final_model_results.csv'")
