@@ -168,12 +168,14 @@ def train_duration_classifier(X, y_class):
     if os.path.exists(model_path):
         print(f"Loading saved model from {model_path}...")
         model = joblib.load(model_path)
+        print(f"Model Hyperparameters: {model.get_params()}")
     else:
         print("No saved model found. Optimizing and training new model...")
         model = optimize_lightgbm(X, y_class, 'binary', 'binary_logloss')
         model.fit(X, y_class)
         joblib.dump(model, model_path)
         print(f"Model saved to {model_path}")
+        print(f"Model Hyperparameters: {model.get_params()}")
     
     # Generate Cross-Validated Probabilities for the next stage
     # INFO: If we loaded a model, strictly speaking we should still generate CV probs on X 
@@ -181,7 +183,10 @@ def train_duration_classifier(X, y_class):
     # If this was inference on NEW data, we'd just predict. 
     # Assuming X is the same training set, we calculate CV probs fresh to keep the downstream safe.
     print("Generating predicted probabilities via 5-fold CV...")
-    y_pred_proba = cross_val_predict(model, X, y_class, cv=5, method='predict_proba', n_jobs=-1)
+    # NOTE: Set n_jobs=1 for cross_val_predict to avoid nested parallelism hang with LightGBM
+    # NOTE: Must use Shuffle=True because data is time-ordered
+    cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=RANDOM_STATE)
+    y_pred_proba = cross_val_predict(model, X, y_class, cv=cv, method='predict_proba', n_jobs=1)
     y_pred_class = np.argmax(y_pred_proba, axis=1)
     
     # Evaluation
@@ -219,7 +224,16 @@ def train_outcome_model(X, y, description):
     
     if os.path.exists(model_path):
         print(f"Loading saved model from {model_path}...")
-        model = joblib.load(model_path)
+        pipeline = joblib.load(model_path)
+        # Extract classifier from pipeline to print params
+        if hasattr(pipeline, 'named_steps'):
+            clf = pipeline.named_steps['classifier']
+            print(f"Model Hyperparameters: {clf.get_params()}")
+        else:
+            print(f"Model Hyperparameters: {pipeline.get_params()}")
+            
+        # Re-assign model variable if needed for CV construction logic below, 
+        # but actually we just use the loaded pipeline for CV
     else:
         print("No saved model found. Optimizing and training new model...")
         # Since we use SMOTE in pipeline, optimization is tricky.
@@ -228,6 +242,7 @@ def train_outcome_model(X, y, description):
         # OR optimize within a pipeline (complex).
         # Decision: Optimize LightGBM on raw imbalanced data using AUC metric, then put in SMOTE pipeline.
         model = optimize_lightgbm(X, y, 'binary', 'auc')
+        print(f"Model Hyperparameters: {model.get_params()}")
         # We don't save the pipeline in this simplified block, we save the classifier logic?
         # Actually better to save the fitted pipeline if possible, or just the best params.
         # Let's save the best estimator.
@@ -237,10 +252,15 @@ def train_outcome_model(X, y, description):
     
     # We construct the pipeline regardless to evaluate CV
     # Use the 'model' (either loaded or optimized new instance)
-    pipeline = ImbPipeline([
-        ('smote', SMOTE(random_state=RANDOM_STATE)),
-        ('classifier', model)
-    ])
+    # If we loaded a pipeline, we use it directly.
+    if os.path.exists(model_path) and 'pipeline' in locals():
+        # Pipeline is already loaded
+        pass
+    else:
+        pipeline = ImbPipeline([
+            ('smote', SMOTE(random_state=RANDOM_STATE)),
+            ('classifier', model)
+        ])
     
     cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=RANDOM_STATE)
     
