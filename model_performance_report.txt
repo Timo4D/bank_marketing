@@ -1,0 +1,74 @@
+BANK MARKETING MODEL PERFORMANCE REPORT
+=======================================
+
+
+========================================
+DURATION CLASSIFIER REPORT
+========================================
+Model Params: {'boosting_type': 'gbdt', 'class_weight': None, 'colsample_bytree': 0.5135091735634928, 'importance_type': 'split', 'learning_rate': 0.011352182132125696, 'max_depth': 7, 'min_child_samples': 46, 'min_child_weight': 0.001, 'min_split_gain': 0.0, 'n_estimators': 345, 'n_jobs': -1, 'num_leaves': 139, 'objective': 'binary', 'random_state': 42, 'reg_alpha': 0.0, 'reg_lambda': 0.0, 'subsample': 0.6527355659618157, 'subsample_for_bin': 200000, 'subsample_freq': 0, 'metric': 'binary_logloss', 'verbosity': -1}
+Accuracy: 0.5800
+Log Loss: 0.6698
+Confusion Matrix:
+[[11164  9541]
+ [ 7756 12727]]
+Classification Report:
+              precision    recall  f1-score   support
+
+           0       0.59      0.54      0.56     20705
+           1       0.57      0.62      0.60     20483
+
+    accuracy                           0.58     41188
+   macro avg       0.58      0.58      0.58     41188
+weighted avg       0.58      0.58      0.58     41188
+
+
+========================================
+OUTCOME MODEL REPORT: Enhanced Model (with Duration Probabilities)
+========================================
+Classifier Params: {'boosting_type': 'gbdt', 'class_weight': None, 'colsample_bytree': 0.5371575202207926, 'importance_type': 'split', 'learning_rate': 0.17307565975772582, 'max_depth': 9, 'min_child_samples': 78, 'min_child_weight': 0.001, 'min_split_gain': 0.0, 'n_estimators': 264, 'n_jobs': -1, 'num_leaves': 112, 'objective': 'binary', 'random_state': 42, 'reg_alpha': 0.0, 'reg_lambda': 0.0, 'subsample': 0.6594464301254999, 'subsample_for_bin': 200000, 'subsample_freq': 0, 'metric': 'auc', 'verbosity': -1}
+Mean CV AUC: 0.7700
+Mean CV ALIFT: 2.1380
+Aggregated Classification Report (CV):
+              precision    recall  f1-score   support
+
+           0       0.92      0.96      0.94     36548
+           1       0.51      0.36      0.42      4640
+
+    accuracy                           0.89     41188
+   macro avg       0.72      0.66      0.68     41188
+weighted avg       0.88      0.89      0.88     41188
+
+
+========================================
+OUTCOME MODEL REPORT: Baseline Model (Probability Only - No Duration Info)
+========================================
+Classifier Params: {'boosting_type': 'gbdt', 'class_weight': None, 'colsample_bytree': 0.5371575202207926, 'importance_type': 'split', 'learning_rate': 0.17307565975772582, 'max_depth': 9, 'min_child_samples': 78, 'min_child_weight': 0.001, 'min_split_gain': 0.0, 'n_estimators': 264, 'n_jobs': -1, 'num_leaves': 112, 'objective': 'binary', 'random_state': 42, 'reg_alpha': 0.0, 'reg_lambda': 0.0, 'subsample': 0.6594464301254999, 'subsample_for_bin': 200000, 'subsample_freq': 0, 'metric': 'auc', 'verbosity': -1}
+Mean CV AUC: 0.7688
+Mean CV ALIFT: 2.1353
+Aggregated Classification Report (CV):
+              precision    recall  f1-score   support
+
+           0       0.92      0.96      0.94     36548
+           1       0.51      0.36      0.42      4640
+
+    accuracy                           0.89     41188
+   macro avg       0.72      0.66      0.68     41188
+weighted avg       0.88      0.89      0.88     41188
+
+
+========================================
+OUTCOME MODEL REPORT: Oracle Model (Perfect Duration Info)
+========================================
+Classifier Params: {'boosting_type': 'gbdt', 'class_weight': None, 'colsample_bytree': 0.5371575202207926, 'importance_type': 'split', 'learning_rate': 0.17307565975772582, 'max_depth': 9, 'min_child_samples': 78, 'min_child_weight': 0.001, 'min_split_gain': 0.0, 'n_estimators': 264, 'n_jobs': -1, 'num_leaves': 112, 'objective': 'binary', 'random_state': 42, 'reg_alpha': 0.0, 'reg_lambda': 0.0, 'subsample': 0.6594464301254999, 'subsample_for_bin': 200000, 'subsample_freq': 0, 'metric': 'auc', 'verbosity': -1}
+Mean CV AUC: 0.8665
+Mean CV ALIFT: 2.4015
+Aggregated Classification Report (CV):
+              precision    recall  f1-score   support
+
+           0       0.93      0.96      0.94     36548
+           1       0.58      0.43      0.49      4640
+
+    accuracy                           0.90     41188
+   macro avg       0.75      0.70      0.72     41188
+weighted avg       0.89      0.90      0.89     41188
+

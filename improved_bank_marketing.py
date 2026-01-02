@@ -5,7 +5,7 @@ import optuna
 import joblib
 import os
 from sklearn.model_selection import StratifiedKFold, cross_val_predict, cross_val_score
-from sklearn.metrics import roc_auc_score, accuracy_score, log_loss, confusion_matrix
+from sklearn.metrics import roc_auc_score, accuracy_score, log_loss, confusion_matrix, classification_report
 from imblearn.over_sampling import SMOTE
 from imblearn.pipeline import Pipeline as ImbPipeline
 import warnings
@@ -14,8 +14,15 @@ import sys
 # --- Configuration ---
 RANDOM_STATE = 42
 MODEL_DIR = 'models'
+REPORT_FILE = 'model_performance_report.txt'
 warnings.filterwarnings('ignore')
 optuna.logging.set_verbosity(optuna.logging.WARNING)
+
+def log_to_file(message):
+    """Appends a message to the report file."""
+    with open(REPORT_FILE, 'a') as f:
+        f.write(message + '\n')
+    print(message)
 
 # Derived Constants from Data Analysis
 AVG_DURATION_SHORT = 101.3  # seconds
@@ -200,6 +207,16 @@ def train_duration_classifier(X, y_class):
     print("  Confusion Matrix:")
     print(cm)
     
+    report = classification_report(y_class, y_pred_class)
+    log_to_file("\n" + "="*40)
+    log_to_file("DURATION CLASSIFIER REPORT")
+    log_to_file("="*40)
+    log_to_file(f"Model Params: {model.get_params()}")
+    log_to_file(f"Accuracy: {acc:.4f}")
+    log_to_file(f"Log Loss: {ll:.4f}")
+    log_to_file("Confusion Matrix:\n" + str(cm))
+    log_to_file("Classification Report:\n" + report)
+    
     return model, y_pred_proba
 
 def calculate_alift(y_true, y_pred_proba):
@@ -268,21 +285,48 @@ def train_outcome_model(X, y, description):
     alift_scores = []
     
     print("Running 5-fold CV...")
+    
+    # Store predictions for aggregated report
+    y_true_all = []
+    y_pred_class_all = []
+    
     for train_idx, test_idx in cv.split(X, y):
         X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
         y_train, y_test = y.iloc[train_idx], y.iloc[test_idx]
         
         pipeline.fit(X_train, y_train)
         y_pred_proba = pipeline.predict_proba(X_test)[:, 1]
+        y_pred_cls = pipeline.predict(X_test)
         
         auc_scores.append(roc_auc_score(y_test, y_pred_proba))
         alift_scores.append(calculate_alift(y_test, y_pred_proba))
+        
+        y_true_all.extend(y_test)
+        y_pred_class_all.extend(y_pred_cls)
         
     mean_auc = np.mean(auc_scores)
     mean_alift = np.mean(alift_scores)
     
     print(f"  AUC: {mean_auc:.4f}")
     print(f"  ALIFT: {mean_alift:.4f}")
+    
+    # Generate Aggregated Report
+    report = classification_report(y_true_all, y_pred_class_all)
+    
+    log_to_file("\n" + "="*40)
+    log_to_file(f"OUTCOME MODEL REPORT: {description}")
+    log_to_file("="*40)
+    
+    # Extract model params if possible
+    if hasattr(pipeline, 'named_steps'):
+        clf_params = pipeline.named_steps['classifier'].get_params()
+        log_to_file(f"Classifier Params: {clf_params}")
+    else:
+        log_to_file(f"Pipeline Params: {pipeline.get_params()}")
+        
+    log_to_file(f"Mean CV AUC: {mean_auc:.4f}")
+    log_to_file(f"Mean CV ALIFT: {mean_alift:.4f}")
+    log_to_file("Aggregated Classification Report (CV):\n" + report)
     
     # Fit and Save Final Pipeline on Full Data
     if not os.path.exists(model_path):
@@ -443,6 +487,11 @@ def run_oracle_experiment(X_base, y, df_original, duration_target):
     return auc_oracle, alift_oracle
 
 def main():
+    # Initialize Report File
+    with open(REPORT_FILE, 'w') as f:
+        f.write("BANK MARKETING MODEL PERFORMANCE REPORT\n")
+        f.write("=======================================\n\n")
+
     # 1. Load Data
     df = load_data('data/bank-additional/bank-additional-full.csv')
     
