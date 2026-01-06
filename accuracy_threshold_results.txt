@@ -1,0 +1,32 @@
+ACCURACY THRESHOLD SIMULATION - BUSINESS IMPACT (FIXED)
+Using Cross-Validation Predictions (No Data Leakage)
+======================================================================
+
+Goal: Find Stage 1 accuracy where efficiency scheduling beats probability scheduling
+Time Budget: 8 hours (28,800 seconds)
+
+Real Duration Model Accuracy: 57.59%
+Baseline (Prob-Only): 74 sales from 87 calls
+
+Results:
+----------------------------------------------------------------------
+Accuracy   | Eff Sales  | Prob Sales  | Diff       | Winner
+----------------------------------------------------------------------
+58%        | 60         | 74          | -14+++++++ | PROBABILITY
+60%        | 70         | 74          | -4++++++++ | PROBABILITY
+65%        | 69         | 74          | -5++++++++ | PROBABILITY
+70%        | 74         | 74          | 0+++++++++ | PROBABILITY
+75%        | 85         | 74          | 11++++++++ | EFFICIENCY
+80%        | 96         | 74          | 22++++++++ | EFFICIENCY
+85%        | 105        | 74          | 31++++++++ | EFFICIENCY
+90%        | 106        | 74          | 32++++++++ | EFFICIENCY
+95%        | 105        | 74          | 31++++++++ | EFFICIENCY
+100%       | 112        | 74          | 38++++++++ | EFFICIENCY
+
+======================================================================
+CONCLUSION
+======================================================================
+
+Threshold: ~75%
+Current Accuracy: 57.59%
+Gap: 17.4 percentage points

@@ -1,0 +1,16 @@
+ABLATION: Adding age_campaign to new features
+======================================================================
+
+Question: Does age_campaign add value on top of contact_intensity + financial_stress?
+
+Results:
+---------------------------------------------------------------------------
+Configuration                                      | Mean AUC   | Std       
+---------------------------------------------------------------------------
+contact_intensity + financial_stress               | 0.7884     | 0.0055    
++ age_campaign                                     | 0.7857     | 0.0061    
+---------------------------------------------------------------------------
+
+Difference: -0.0027 (-0.34%)
+
+Conclusion: Adding age_campaign HURTS (-0.0027 AUC)
